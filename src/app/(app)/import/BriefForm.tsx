@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { DecisionBadge, btnPrimary, btnSecondary } from "@/components/ui";
-import type { BriefPlan } from "@/lib/briefImport";
+import type { BriefPlan, DocumentPlan } from "@/lib/briefImport";
 import { num } from "@/lib/format";
 
 function ScoreLine({ label, r }: { label: string; r: BriefPlan["parentScore"] }) {
@@ -15,6 +15,8 @@ export function BriefForm() {
   const [createChild, setCreateChild] = useState(true);
   const [analyst, setAnalyst] = useState("Grok research agent (per owner)");
   const [done, setDone] = useState<{ childCode: string | null; evidenceCreated: number; scored: string[] } | null>(null);
+  const [doc, setDoc] = useState<DocumentPlan | null>(null);
+  const [docDone, setDocDone] = useState<{ code: string; title: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -31,16 +33,29 @@ export function BriefForm() {
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) return setError(data.error ?? "Import failed");
-    if (mode === "preview") { setPlan(data.plan); setDone(null); } else { setDone(data.summary); setPlan(null); }
+    setPlan(null); setDone(null); setDoc(null); setDocDone(null);
+    if (mode === "preview") { if (data.plan?.kind === "document") setDoc(data.plan); else setPlan(data.plan); }
+    else if (data.summary?.kind === "document") setDocDone(data.summary);
+    else setDone(data.summary);
   }
 
   return (
     <div className="space-y-4 text-sm">
-      <p className="text-muted">Upload a research brief (.md) written for one idea, such as your Grok briefs. AVI files the scores, evidence and recommendations against that idea, labelled with who produced them. Research evidence is stored as <i>AI-reported</i>, never as verified, and the critical gates stay open until you confirm them.</p>
-      <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/markdown" onChange={() => { setPlan(null); setDone(null); }} />
+      <p className="text-muted">Upload a research brief (.md) written for one idea, such as your Grok briefs, or any other Markdown file for an idea (a sample pack, a script) to keep it on that idea. AVI files the scores, evidence and recommendations against that idea, labelled with who produced them. Research evidence is stored as <i>AI-reported</i>, never as verified, and the critical gates stay open until you confirm them.</p>
+      <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/markdown" onChange={() => { setPlan(null); setDone(null); setDoc(null); setDocDone(null); }} />
       <div><label htmlFor="analyst">Research produced by</label><input id="analyst" value={analyst} onChange={(e) => setAnalyst(e.target.value)} /></div>
       <button className={btnSecondary} disabled={busy} onClick={() => send("preview")}>{busy && !plan ? "Reading…" : "Preview brief"}</button>
       {error && <p className="text-fail">{error}</p>}
+      {doc && (
+        <div className="space-y-2 rounded-lg bg-paper p-3">
+          <p>This isn&apos;t a research brief, so it will be kept as a <b>document</b> on the idea — no scores or evidence are taken from it.</p>
+          <p><b>{doc.title}</b>{doc.opportunity ? <> → {doc.opportunity.code} {doc.opportunity.name}</> : null}</p>
+          {doc.alreadyImported && <p className="text-inv">Already added on {new Date(doc.alreadyImported).toLocaleString("en-AU")}.</p>}
+          {doc.warnings.length > 0 && <ul className="list-disc pl-5 text-inv">{doc.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+          <button className={btnPrimary} disabled={busy || !doc.opportunity || Boolean(doc.alreadyImported)} onClick={() => send("commit")}>{busy ? "Adding…" : "Add document"}</button>
+        </div>
+      )}
+      {docDone && <div className="rounded-lg bg-pass-soft p-3 text-pass"><p className="font-semibold">Document added to {docDone.code}</p><p>Find it on that idea&apos;s Research tab.</p></div>}
 
       {plan && (
         <div className="space-y-3 rounded-lg bg-paper p-3">

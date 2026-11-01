@@ -160,3 +160,45 @@ export async function commitBriefImport(sql: Sql, text: string, opts: { createCh
     return { briefId: brief.id, childCode, evidenceCreated, scored };
   });
 }
+
+// ---------------------------------------------------------------- other documents
+// Markdown that isn't a research brief (a sample pack, an outreach script, notes) is kept as a
+// document on the idea named in its file name or text. Nothing is scored or turned into evidence.
+
+export function isResearchBrief(text: string) {
+  const titleLine = text.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
+  return /^AVI-\d+\s+Research Brief/i.test(titleLine);
+}
+
+export type DocumentPlan = {
+  kind: "document"; sha256: string; title: string; opportunity: { id: string; code: string; name: string } | null;
+  alreadyImported: string | null; warnings: string[];
+};
+
+export async function planDocument(sql: Sql, text: string, filename: string): Promise<DocumentPlan> {
+  const sha256 = createHash("sha256").update(text).digest("hex");
+  const title = (text.match(/^#\s+(.+)$/m)?.[1] ?? filename.replace(/^[0-9a-f]{6,}-/i, "")).trim().slice(0, 300);
+  const code = (filename.match(/AVI-\d+/i) ?? text.match(/AVI-\d+/i))?.[0]?.toUpperCase();
+  const [opp] = code ? await sql`select id, code, name from opportunities where code = ${code}` : [];
+  const [prev] = await sql`select imported_at from research_briefs where content_sha256 = ${sha256}`;
+  const warnings: string[] = [];
+  if (!code) warnings.push("Couldn't tell which idea this belongs to. Put the idea code (e.g. AVI-002) in the file name.");
+  else if (!opp) warnings.push(`${code} isn't in AVI yet. Import your register first.`);
+  return { kind: "document", sha256, title, opportunity: opp ? { id: opp.id, code: opp.code, name: opp.name } : null,
+    alreadyImported: prev ? new Date(prev.importedAt).toISOString() : null, warnings };
+}
+
+export async function commitDocument(sql: Sql, text: string, filename: string, analyst?: string) {
+  const plan = await planDocument(sql, text, filename);
+  if (!plan.opportunity) throw new UserError(plan.warnings[0]);
+  if (plan.alreadyImported) throw new UserError("This exact document has already been added.");
+  return sql.begin(async (tx) => {
+    const [row] = await tx`insert into research_briefs ${tx({
+      kind: "document", opportunityId: plan.opportunity!.id, opportunityCode: plan.opportunity!.code, title: plan.title,
+      version: filename.match(/v\d+(\.\d+)*/i)?.[0] ?? null, analyst: (analyst || DEFAULT_ANALYST).slice(0, 200),
+      content: text, contentSha256: plan.sha256, parsed: { filename } as never,
+    })} returning id`;
+    await audit(tx, "opportunity", plan.opportunity!.id, "document_added", { document: row.id, title: plan.title });
+    return { kind: "document" as const, code: plan.opportunity!.code, title: plan.title };
+  });
+}

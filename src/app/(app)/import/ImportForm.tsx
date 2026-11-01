@@ -3,6 +3,8 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { DecisionBadge, btnPrimary, btnSecondary } from "@/components/ui";
 import type { ImportPlan } from "@/lib/importer";
+import type { TrackerPlan } from "@/lib/trackerImport";
+import { TrackerPreview } from "./TrackerPreview";
 
 type Summary = {
   fileVersion: string | null; opportunitiesCreated: number; opportunitiesUpdated: number; conflictsKept: number;
@@ -20,6 +22,8 @@ export function ImportForm() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [tplan, setTplan] = useState<TrackerPlan | null>(null);
+  const [tdone, setTdone] = useState<{ experiment: string; status: string | null; phaseA: string; phaseB: string; scoreUpdated: boolean } | null>(null);
   const [overwrite, setOverwrite] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,7 +40,10 @@ export function ImportForm() {
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) return setError(data.error ?? "Import failed");
-    if (mode === "preview") { setPlan(data.plan); setSummary(null); } else { setSummary(data.summary); setPlan(null); }
+    setPlan(null); setTplan(null); setSummary(null); setTdone(null);
+    if (mode === "preview") { if (data.plan?.kind === "tracker") setTplan(data.plan); else setPlan(data.plan); }
+    else if (data.summary?.kind === "tracker") setTdone(data.summary);
+    else setSummary(data.summary);
   }
 
   const opps = plan?.opportunities ?? [];
@@ -54,10 +61,19 @@ export function ImportForm() {
 
   return (
     <div className="space-y-4 text-sm">
-      <p className="text-muted">Step 1 previews exactly what will happen. Nothing is written until you confirm. Importing a newer version of your register updates ideas already in AVI instead of duplicating them, and never overwrites a value you changed in AVI unless you say so.</p>
-      <input ref={fileRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={() => { setPlan(null); setSummary(null); }} />
+      <p className="text-muted">Upload your Opportunity Register, or an experiment tracking sheet (e.g. EXP-002r1). Step 1 previews exactly what will happen. Nothing is written until you confirm. Importing a newer version of your register updates ideas already in AVI instead of duplicating them, and never overwrites a value you changed in AVI unless you say so.</p>
+      <input ref={fileRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={() => { setPlan(null); setSummary(null); setTplan(null); setTdone(null); }} />
       <button className={btnSecondary} disabled={busy} onClick={() => send("preview")}>{busy && !plan ? "Reading…" : "Preview import"}</button>
       {error && <p className="text-fail">{error}</p>}
+      {tplan && <TrackerPreview plan={tplan} busy={busy} onImport={() => send("commit")} />}
+      {tdone && (
+        <div className="rounded-lg bg-pass-soft p-3 text-pass">
+          <p className="font-semibold">{tdone.experiment} updated</p>
+          <p>Status: {tdone.status}. Phase A: {tdone.phaseA}. Phase B: {tdone.phaseB}.{tdone.scoreUpdated ? " Paid pilots recorded — the idea's score now counts demand as verified." : ""}</p>
+          <p className="mt-1 text-xs">Upload the sheet again any time you add more rows — AVI recalculates from scratch each time.</p>
+          <Link href="/opportunities" className="underline">Open the register →</Link>
+        </div>
+      )}
 
       {plan && (
         <div className="space-y-3 rounded-lg bg-paper p-3">

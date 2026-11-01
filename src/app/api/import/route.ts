@@ -3,6 +3,9 @@ import { handle } from "@/lib/api";
 import { getSql } from "@/lib/db";
 import { checkUpload, commitImport, planImport, MAX_UPLOAD_BYTES } from "@/lib/importer";
 import { UserError } from "@/lib/repo";
+import { readXlsx } from "@/lib/xlsxReader";
+import { isTrackerWorkbook } from "@/lib/experimentTracker";
+import { commitTracker, planTracker } from "@/lib/trackerImport";
 
 export const maxDuration = 60;
 
@@ -16,6 +19,13 @@ export const POST = handle(async (req: Request) => {
   const problem = checkUpload(file.name, bytes);
   if (problem) throw new UserError(problem);
   const sql = getSql();
+  // Experiment tracking sheets (e.g. EXP-002r1) go to their own importer
+  const sheets = await readXlsx(bytes).catch(() => null);
+  if (sheets && isTrackerWorkbook(sheets)) {
+    const tplan = await planTracker(sql, sheets, file.name.slice(0, 200));
+    if (mode === "preview") return NextResponse.json({ mode, plan: tplan });
+    return NextResponse.json({ mode, summary: { kind: "tracker", ...(await commitTracker(sql, tplan, file.name.slice(0, 200))) } });
+  }
   let plan;
   try {
     plan = await planImport(sql, bytes);

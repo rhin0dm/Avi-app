@@ -4,7 +4,7 @@ import { date, host } from "@/lib/format";
 
 type Competitor = { id: string; name: string; altType: string | null; price: string | null; coverage: string | null;
   switchingFriction: string | null; gap: string | null; sourceText: string | null; sourceUrl: string | null; checkedOn: string | null };
-type Brief = { id: string; title: string; version: string | null; analyst: string | null; preparedOn: Date | string | null; content: string; importedAt: Date | string };
+type Brief = { id: string; kind?: string; title: string; version: string | null; analyst: string | null; preparedOn: Date | string | null; content: string; importedAt: Date | string };
 
 /** Renders imported research briefs. Raw HTML in the Markdown is never rendered. */
 export function ResearchPanel({ briefs, competitors }: { briefs: Brief[]; competitors: Competitor[] }) {
@@ -37,7 +37,7 @@ export function ResearchPanel({ briefs, competitors }: { briefs: Brief[]; compet
         <details key={b.id} open={i === 0} className="rounded-xl border border-line bg-white p-4">
           <summary className="cursor-pointer text-sm">
             <b>{b.title}</b>
-            <div className="text-xs text-muted">By {b.analyst ?? "unknown"} · prepared {date(b.preparedOn)} · imported {date(b.importedAt)}. AI research: check sources before relying on them.</div>
+            <div className="text-xs text-muted">{b.kind === "document" ? <>Document · added {date(b.importedAt)}</> : <>By {b.analyst ?? "unknown"} · prepared {date(b.preparedOn)} · imported {date(b.importedAt)}. AI research: check sources before relying on them.</>}</div>
           </summary>
           <div className="brief mt-4 overflow-x-auto text-sm">
             <ReactMarkdown

@@ -265,7 +265,7 @@ export async function getOpportunity(id: string) {
   const mergedFrom = await sql`select id, code, name from opportunities where merged_into_id = ${id}`;
   const version = await activeScoringVersion();
   const fin = await getFinancialModel(id);
-  const briefs = await sql`select id, title, version, analyst, prepared_on, content, parsed, imported_at
+  const briefs = await sql`select id, kind, title, version, analyst, prepared_on, content, parsed, imported_at
     from research_briefs where opportunity_id = ${id} or parsed->>'childOpportunityId' = ${id} order by imported_at desc`;
   const competitors = await sql`select * from competitors where opportunity_id = ${id} order by alt_type nulls last, name`;
   const related = await sql`select id, code, name, stage from opportunities
