@@ -1,12 +1,12 @@
 import "server-only";
 import ExcelJS from "exceljs";
-import { getSql } from "./db";
+import { getSql, ready } from "./db";
 import { listOpportunities } from "./repo";
 import { runScenarios, financialInputsSchema, scenariosSchema } from "./finance";
 import { CRITERIA, GATES } from "./scoring";
 
 const TABLES = ["opportunities", "scoring_versions", "scores", "financial_models", "evidence", "opportunity_evidence",
-  "experiments", "decision_history", "jobs", "audit_log", "settings", "import_runs"] as const;
+  "experiments", "decision_history", "jobs", "audit_log", "settings", "import_runs", "research_briefs"] as const;
 
 const plain = (v: unknown): string | number | null => {
   if (v === null || v === undefined) return null;
@@ -106,6 +106,7 @@ export async function buildCsv(): Promise<string> {
 }
 
 export async function buildBackup() {
+  await ready();
   const sql = getSql();
   const out: Record<string, unknown> = { app: "AVI", format: 1, exportedAt: new Date().toISOString() };
   for (const t of TABLES) out[t] = await sql`select * from ${sql(t)}`;

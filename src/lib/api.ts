@@ -2,11 +2,13 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { UserError } from "./repo";
+import { ready } from "./db";
 
 /** Wraps a route handler with consistent JSON errors. Internal errors are logged, not leaked. */
 export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response>) {
   return async (...args: A) => {
     try {
+      await ready();
       return await fn(...args);
     } catch (e) {
       if (e instanceof ZodError) {

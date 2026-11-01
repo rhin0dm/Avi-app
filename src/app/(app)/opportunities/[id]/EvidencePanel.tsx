@@ -23,6 +23,7 @@ export function EvidencePanel({ evidence, experiments }: { evidence: any[]; expe
                   {e.scope ? ` · ${e.scope}` : ""}{e.limitations ? ` · ${e.limitations}` : ""}
                 </div>
                 {e.originalClassification && <div className="text-xs text-muted">Original classification: {e.originalClassification}</div>}
+                {e.sourceNote && <div className="text-xs text-inv">{e.sourceNote}</div>}
               </li>
             ))}
           </ul>

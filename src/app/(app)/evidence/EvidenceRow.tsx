@@ -6,7 +6,7 @@ import { EVIDENCE_LEVELS } from "@/lib/scoring";
 import { api } from "@/lib/client";
 
 type E = { id: string; code: string | null; claim: string; classification: string; originalClassification: string | null; sourceUrl: string | null;
-  scope: string | null; limitations: string | null; relevantTo: string | null; actionRequired: string | null; links: { id: string; code: string }[] };
+  scope: string | null; limitations: string | null; relevantTo: string | null; sourceNote?: string | null; actionRequired: string | null; links: { id: string; code: string }[] };
 
 export function EvidenceRow({ e, options }: { e: E; options: { id: string; code: string; name: string }[] }) {
   const router = useRouter();
@@ -30,6 +30,7 @@ export function EvidenceRow({ e, options }: { e: E; options: { id: string; code:
         {e.scope && ` · ${e.scope}`}{e.limitations && ` · ${e.limitations}`}
       </div>
       {e.originalClassification && <div className="text-xs text-muted">Imported as: {e.originalClassification}</div>}
+      {e.sourceNote && <div className="text-xs text-inv">{e.sourceNote}</div>}
       {e.relevantTo && <div className="text-xs text-muted">Register says relevant to: <i>{e.relevantTo}</i></div>}
       {e.actionRequired && <div className="text-xs">To do: {e.actionRequired}</div>}
       <div className="mt-2 flex flex-wrap items-center gap-2">

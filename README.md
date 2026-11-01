@@ -30,6 +30,12 @@ Deployment steps for Supabase + Vercel are in **[DEPLOY.md](DEPLOY.md)**.
 - **Opportunity Scout and scheduled discovery** (Phase 3). Nothing pretends to run in the background.
 - **Revenue/cost tracking beyond the register's "Actual test spend" and "Verified revenue" fields** (Phase 3).
 
+## Research briefs
+
+**Import / export → Import a research brief (.md)** reads briefs in the AVI research-brief format (for example from an outside AI research agent). It stores the whole brief on the idea's **Research** tab and adds the brief's evidence table, labelled as AI-reported (never "verified" until you check it). It also scores the idea from the brief's score table, recording who produced the score. Where the brief proposes a narrower child idea ("mint AVI-0xx …"), AVI can create it and score it separately, scoring the parent "as framed". Critical gates are never marked satisfied by a brief.
+
+Database changes ship with the code: on first use after a deploy, AVI applies any pending migrations itself.
+
 ## Scoring rules (code: `src/lib/scoring.ts`)
 
 Weighted total = Σ(score × weight) using integer arithmetic, so the same inputs always give the same result (matches the workbook's `ROUND((C*35+D*20+…)/10,1)`).

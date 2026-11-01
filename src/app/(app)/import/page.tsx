@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db";
 import { PageHeader, Card, btnSecondary } from "@/components/ui";
 import { ImportForm } from "./ImportForm";
+import { BriefForm } from "./BriefForm";
 
 export const metadata = { title: "Import / export" };
 
@@ -10,9 +11,14 @@ export default async function ImportPage() {
     <>
       <PageHeader title="Import and export" />
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-        <Card title="Import your Opportunity Register (.xlsx)">
-          <ImportForm />
-        </Card>
+        <div className="space-y-4">
+          <Card title="Import your Opportunity Register (.xlsx)">
+            <ImportForm />
+          </Card>
+          <Card title="Import a research brief (.md)">
+            <BriefForm />
+          </Card>
+        </div>
         <div className="space-y-4">
           <Card title="Export">
             <div className="flex flex-col gap-2">

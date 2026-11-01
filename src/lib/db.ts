@@ -21,3 +21,35 @@ export function getSql(): Sql {
   }
   return g.__aviSql;
 }
+
+const r = globalThis as unknown as { __aviReady?: Promise<void> };
+
+/**
+ * Applies any pending migrations (embedded at build time) once per server instance,
+ * so schema updates deploy with the code — no manual SQL needed.
+ */
+export function ready(): Promise<void> {
+  if (!r.__aviReady) {
+    r.__aviReady = applyMigrations(getSql()).catch((e) => {
+      r.__aviReady = undefined;
+      throw e;
+    });
+  }
+  return r.__aviReady;
+}
+
+async function applyMigrations(sql: Sql) {
+  const { MIGRATIONS } = await import("./migrations.generated");
+  await sql`create table if not exists schema_migrations (name text primary key, applied_at timestamptz default now())`;
+  const done = new Set((await sql`select name from schema_migrations`).map((x) => x.name as string));
+  for (const m of MIGRATIONS) {
+    if (done.has(m.name)) continue;
+    await sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(4729110)`; // one instance migrates at a time
+      const [already] = await tx`select 1 from schema_migrations where name = ${m.name}`;
+      if (already) return;
+      await tx.unsafe(m.sql);
+      await tx`insert into schema_migrations (name) values (${m.name})`;
+    });
+  }
+}

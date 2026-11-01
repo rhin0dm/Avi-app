@@ -11,6 +11,7 @@ import { FinancialEditor } from "./FinancialEditor";
 import { Actions } from "./Actions";
 import { Interpretation } from "./Interpretation";
 import { EvidencePanel } from "./EvidencePanel";
+import { ResearchPanel } from "./ResearchPanel";
 
 export default async function OpportunityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -64,6 +65,7 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           </div>
           {o.legacyScore !== null && <div className="text-xs text-muted">Original screening: #{o.legacyRank} · {num(Number(o.legacyScore))}/100 (subjective)</div>}
           {cur && cur.scoringVersionId !== d.activeVersion.id && <div className="text-xs text-inv">Scored under older weights ({cur.versionLabel})</div>}
+          {cur?.source && <div className="text-xs text-muted">Scored by: {cur.source}</div>}
         </div>
       </div>
 
@@ -80,6 +82,7 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
         { key: "overview", label: "Overview", content: <OverviewForm id={id} initial={fields} legacy={{ decision: o.legacyDecision, validation: o.legacyValidationStatus, evidence: o.legacyEvidenceStatus, source: o.importSource, raw: o.importRaw }} /> },
         { key: "score", label: "Score", content: <ScoreEditor id={id} initial={d.scoreDraft} weights={d.activeVersion.weights} thresholds={d.activeVersion.thresholds} versionLabel={d.activeVersion.label} /> },
         { key: "financials", label: "Financials", content: <FinancialEditor id={id} initial={d.financial} /> },
+        { key: "research", label: `Research (${d.briefs.length})`, content: <ResearchPanel briefs={d.briefs as never} /> },
         { key: "evidence", label: `Evidence (${d.evidence.length})`, content: <EvidencePanel evidence={d.evidence} experiments={d.experiments} /> },
         {
           key: "history", label: "History", content: (

@@ -1,6 +1,6 @@
 import "server-only";
 import type { Sql, TransactionSql } from "postgres";
-import { getSql } from "./db";
+import { getSql, ready } from "./db";
 import { findSimilar, normalizeName } from "./similarity";
 import {
   scoreOpportunity, validateWeights, DEFAULT_THRESHOLDS, emptyCriteria, emptyGates,
@@ -157,35 +157,37 @@ export async function reopenOpportunity(id: string, reason: string) {
 }
 
 // ---------------------------------------------------------------- scores
-export async function saveScore(id: string, criteria: CriterionScore[], gates: GateAssessment[]) {
-  return getSql().begin(async (tx) => {
+export async function saveScore(id: string, criteria: CriterionScore[], gates: GateAssessment[], source = "Owner (manual)", db?: TransactionSql) {
+  await ready();
+  const run = async (tx: Db) => {
     const v = await activeScoringVersion(tx);
     const result = scoreOpportunity(criteria, gates, v.weights, v.thresholds);
     const [prev] = await tx`select weighted_total, decision from scores where opportunity_id = ${id} and is_current and decision <> 'LEGACY'`;
     await tx`update scores set is_current = false where opportunity_id = ${id} and is_current and decision <> 'LEGACY'`;
     const [s] = await tx`insert into scores (opportunity_id, scoring_version_id, criteria, gates, weighted_total,
-      evidence_confidence, decision, decision_reasons, is_current)
+      evidence_confidence, decision, decision_reasons, is_current, source)
       values (${id}, ${v.id}, ${j(criteria)}::jsonb, ${j(gates)}::jsonb, ${result.weightedTotal},
-      ${result.evidenceConfidence}, ${result.decision}, ${j(result.reasons)}::jsonb, true) returning *`;
+      ${result.evidenceConfidence}, ${result.decision}, ${j(result.reasons)}::jsonb, true, ${source}) returning *`;
     if (!prev || prev.decision !== result.decision || Number(prev.weightedTotal) !== result.weightedTotal) {
       await tx`insert into decision_history (opportunity_id, old_score, new_score, old_decision, new_decision, reason, source)
         values (${id}, ${prev?.weightedTotal ?? null}, ${result.weightedTotal}, ${prev?.decision ?? null}, ${result.decision},
-        ${result.reasons.join(" ")}, ${"Scoring: " + v.label})`;
+        ${result.reasons.join(" ")}, ${`Scoring: ${v.label} · ${source}`})`;
     }
-    await audit(tx, "opportunity", id, "scored", { version: v.label, total: result.weightedTotal, decision: result.decision });
+    await audit(tx, "opportunity", id, "scored", { version: v.label, total: result.weightedTotal, decision: result.decision, source });
     return { score: s, result };
-  });
+  };
+  return db ? run(db) : getSql().begin(run);
 }
 
 /** Re-run every current score under the active weights. Inputs are unchanged, only weights differ. */
 export async function rescoreAll() {
   const sql = getSql();
   const v = await activeScoringVersion();
-  const stale = await sql`select opportunity_id, criteria, gates from scores
+  const stale = await sql`select opportunity_id, criteria, gates, source from scores
     where is_current and decision <> 'LEGACY' and scoring_version_id <> ${v.id}`;
   let changed = 0;
   for (const s of stale) {
-    await saveScore(s.opportunityId, s.criteria, s.gates);
+    await saveScore(s.opportunityId, s.criteria, s.gates, `${s.source ?? "Owner (manual)"} (rescored)`);
     changed++;
   }
   return { rescored: changed, version: v.label };
@@ -245,6 +247,7 @@ export async function listOpportunities(opts: { includeMerged?: boolean } = {}):
 
 export async function getOpportunity(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  await ready();
   const sql = getSql();
   const [o] = await sql`select o.*, m.code as merged_into_code, m.name as merged_into_name
     from opportunities o left join opportunities m on m.id = o.merged_into_id where o.id = ${id}`;
@@ -260,10 +263,12 @@ export async function getOpportunity(id: string) {
   const mergedFrom = await sql`select id, code, name from opportunities where merged_into_id = ${id}`;
   const version = await activeScoringVersion();
   const fin = await getFinancialModel(id);
+  const briefs = await sql`select id, title, version, analyst, prepared_on, content, parsed, imported_at
+    from research_briefs where opportunity_id = ${id} or parsed->>'childOpportunityId' = ${id} order by imported_at desc`;
   const current = scores.find((s) => s.isCurrent && s.decision !== "LEGACY") ?? null;
   return {
     opportunity: o, currentScore: current, scoreHistory: scores, evidence, experiments, decisions,
-    audit: auditRows, jobs, mergedFrom, activeVersion: version, financial: fin,
+    audit: auditRows, jobs, mergedFrom, activeVersion: version, financial: fin, briefs,
     scoreDraft: {
       criteria: (current?.criteria as CriterionScore[]) ?? emptyCriteria(),
       gates: (current?.gates as GateAssessment[]) ?? emptyGates(),
