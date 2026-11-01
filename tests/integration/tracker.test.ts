@@ -57,6 +57,15 @@ describe("tracking sheet rules", () => {
     const cold = Array.from({ length: 40 }, () => ["P", "Email", "2026-11-09", "N", "N", null, null, null, null, null, null, null, null]);
     expect(parseTracker(book([40, 40], [10, 10], cold)).phaseB.decision).toBe("STOP");
   });
+  it("after the window closes, 1–2 paying practices means investigate more", () => {
+    const two = Array.from({ length: 2 }, () => ["P", "Email", "2026-11-09", "Y", "Y", 245, 5, 90, null, 4.5, "N", null, null]);
+    const b = book([40, 40], [10, 10], two);
+    expect(parseTracker(b, "", "2026-11-12").phaseB.decision).toBe("IN PROGRESS");
+    expect(parseTracker(b, "", "2026-11-17").phaseB).toMatchObject({ decision: "INVESTIGATE MORE" });
+    expect(parseTracker(b, "", "2026-11-17").rules.phaseBEnd).toBe("2026-11-16");
+    const none = [["P", "Email", "2026-11-09", "N", "N", null, null, null, null, null, null, null, null]];
+    expect(parseTracker(book([40, 40], [10, 10], none), "", "2026-11-17").phaseB.decision).toBe("STOP");
+  });
 });
 
 const V14 = "local-data/v14.xlsx";

@@ -7,10 +7,11 @@ type Cell = string | number | null;
 
 export type TrackerRules = {
   passMedianMin: number; passResidualPct: number; stopMedianMin: number; stopRemovedPct: number;
+  phaseBEnd: string | null; // last day of the phase B window, e.g. "Phase B (8–16 Nov" → 16 Nov
   successPractices: number; successFiles: number; maxOwnerMinPerFile: number; minLodgementScore: number; stopOutreachNoPaid: number;
 };
 export type PhaseADecision = "PASS" | "BORDERLINE" | "STOP" | "PENDING";
-export type PhaseBDecision = "SUCCESS" | "STOP" | "IN PROGRESS" | "NOT STARTED";
+export type PhaseBDecision = "SUCCESS" | "INVESTIGATE MORE" | "STOP" | "IN PROGRESS" | "NOT STARTED";
 
 export type TrackerResult = {
   title: string;
@@ -71,9 +72,19 @@ export function isTrackerWorkbook(sheets: SheetData[]) {
   return Boolean(sheet(sheets, "File_Log") && sheet(sheets, "GoNoGo"));
 }
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function phaseBEnd(text: string): string | null {
+  const m = text.match(/Phase B\s*\(\s*\d{1,2}\s*[–—-]\s*(\d{1,2})\s+([A-Za-z]{3})/i);
+  const mon = m ? MONTHS.indexOf(m[2].toLowerCase()) : -1;
+  if (!m || mon < 0) return null;
+  const year = Number(text.match(/\b(20\d{2})\b/)?.[1] ?? new Date().getUTCFullYear());
+  return `${year}-${String(mon + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+}
+
 function parseRules(text: string): TrackerRules {
   const n = (re: RegExp, d: number) => { const m = text.match(re); return m ? Number(m[1]) : d; };
   return {
+    phaseBEnd: phaseBEnd(text),
     passMedianMin: n(/PASS if median manual minutes\s*≥\s*(\d+)/i, 30),
     passResidualPct: n(/not removed by tools\s*≥\s*(\d+)\s*%/i, 40),
     stopMedianMin: n(/STOP if median\s*<\s*(\d+)/i, 20),
@@ -86,7 +97,8 @@ function parseRules(text: string): TrackerRules {
   };
 }
 
-export function parseTracker(sheets: SheetData[], filename = ""): TrackerResult {
+/** `today` is YYYY-MM-DD in the owner's time zone; it decides whether the phase B window has closed. */
+export function parseTracker(sheets: SheetData[], filename = "", today: string = new Date().toISOString().slice(0, 10)): TrackerResult {
   const instr = sheet(sheets, "Instructions");
   const instrText = (instr?.rows ?? []).map((r) => (r ?? []).filter((c) => c !== null).join(" ")).join("\n");
   const title = String(instr?.rows[0]?.[0] ?? filename).trim();
@@ -173,6 +185,15 @@ export function parseTracker(sheets: SheetData[], filename = ""): TrackerResult 
     } else if (phaseB.paidPractices === 0 && phaseB.outreach >= rules.stopOutreachNoPaid) {
       phaseB.decision = "STOP";
       phaseB.reasons.push(`No paid practices after ${phaseB.outreach} outreaches (stop rule: ${rules.stopOutreachNoPaid}).`);
+    } else if (rules.phaseBEnd && today > rules.phaseBEnd) {
+      // window closed: some buyers paid but the success bar wasn't met → keep investigating; nobody paid → stop
+      if (phaseB.paidPractices > 0) {
+        phaseB.decision = "INVESTIGATE MORE";
+        phaseB.reasons.push(`Window closed ${rules.phaseBEnd}: ${phaseB.paidPractices} paying practice(s) and ${phaseB.paidFiles} files — short of the success bar (${rules.successPractices} practices, ${rules.successFiles} files, ≤${rules.maxOwnerMinPerFile} owner-min/file on average, lodgement-ready ≥${rules.minLodgementScore}/5).`);
+      } else {
+        phaseB.decision = "STOP";
+        phaseB.reasons.push(`Window closed ${rules.phaseBEnd} with no paying practices.`);
+      }
     } else {
       phaseB.decision = "IN PROGRESS";
       phaseB.reasons.push(`${phaseB.paidPractices}/${rules.successPractices} paying practices, ${phaseB.paidFiles}/${rules.successFiles} files after ${phaseB.outreach} outreaches.`);
@@ -207,6 +228,7 @@ export function parseTracker(sheets: SheetData[], filename = ""): TrackerResult 
 export function trackerStatus(t: TrackerResult, previous: string): string {
   if (t.phaseB.decision === "SUCCESS") return "succeeded";
   if (t.phaseB.decision === "STOP") return "stopped (no paid pilots)";
+  if (t.phaseB.decision === "INVESTIGATE MORE") return "investigate more";
   if (t.phaseA.decision === "STOP") return "stopped (phase A)";
   if (t.phaseB.decision === "IN PROGRESS") return "phase B running";
   if (t.phaseA.decision === "PASS") return "phase A passed";

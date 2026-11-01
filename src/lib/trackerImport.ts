@@ -16,7 +16,8 @@ export type TrackerPlan = {
 };
 
 export async function planTracker(sql: Sql, sheets: SheetData[], filename: string): Promise<TrackerPlan> {
-  const t = parseTracker(sheets, filename);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: process.env.APP_TIMEZONE ?? "Australia/Hobart" });
+  const t = parseTracker(sheets, filename, today);
   const warnings = [...t.warnings];
   let experiment: TrackerPlan["experiment"] = null;
   if (t.experimentCode) {

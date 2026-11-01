@@ -26,8 +26,9 @@ export function TrackerPreview({ plan, busy, onImport }: { plan: TrackerPlan; bu
         <ul className="mt-1 text-xs">
           <li>Outreach: {b.outreach} · replies: {b.replies} · paying practices: {b.paidPractices} (need {t.rules.successPractices})</li>
           <li>Files paid: {b.paidFiles} (need {t.rules.successFiles}) · revenue A${b.revenueExGst} ex GST</li>
-          <li>Owner minutes per file: {v(b.ownerMinPerFile)} (max {t.rules.maxOwnerMinPerFile}) · lodgement-ready: {v(b.avgLodgementScore, "/5")} (need {t.rules.minLodgementScore})</li>
+          <li>Owner minutes per file, average: {v(b.ownerMinPerFile)} (max {t.rules.maxOwnerMinPerFile}) · lodgement-ready: {v(b.avgLodgementScore, "/5")} (need {t.rules.minLodgementScore})</li>
         </ul>
+        {t.rules.phaseBEnd && <p className="mt-1 text-xs text-muted">Window closes {t.rules.phaseBEnd}. After that, 1+ paying practices short of the bar = investigate more; none = stop.</p>}
         {b.reasons.length > 0 && <p className="mt-1 text-xs text-muted">{b.reasons.join(" ")}</p>}
       </div>
       <p className="text-xs">Spend: A${t.spend.spent}{t.spend.ceiling !== null ? ` of A$${t.spend.ceiling}` : ""}</p>
