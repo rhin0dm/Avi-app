@@ -309,6 +309,20 @@ export async function dashboardData() {
   return { opps, experiments, runway, recentDecisions };
 }
 
+// ---------------------------------------------------------------- plans
+/** Dated steps from plan documents (e.g. an experiment day plan), from today on. */
+export async function upcomingSteps(today: string, opportunityId?: string) {
+  await ready();
+  const { parseDatedSteps } = await import("./docPlan");
+  const docs = await getSql()`select rb.id, rb.title, rb.content, rb.imported_at, o.id as opp_id, o.code, o.name
+    from research_briefs rb join opportunities o on o.id = rb.opportunity_id
+    where rb.kind = 'document' ${opportunityId ? getSql()`and o.id = ${opportunityId}` : getSql()``}`;
+  return docs.flatMap((d) => parseDatedSteps(d.content, new Date(d.importedAt))
+    .filter((s) => s.end >= today)
+    .map((s) => ({ ...s, docTitle: d.title as string, oppId: d.oppId as string, code: d.code as string, name: d.name as string })))
+    .sort((a, b) => a.start.localeCompare(b.start) || a.code.localeCompare(b.code));
+}
+
 // ---------------------------------------------------------------- comparison
 export async function compareData(ids: string[]) {
   await ready();

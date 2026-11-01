@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getOpportunity, listOpportunities } from "@/lib/repo";
+import { getOpportunity, listOpportunities, upcomingSteps } from "@/lib/repo";
+import { PlanSteps } from "@/components/PlanSteps";
 import { providerStatus } from "@/lib/ai/providers";
 import { DecisionBadge, StageBadge } from "@/components/ui";
 import { date, isoDay, num, pct } from "@/lib/format";
@@ -18,9 +19,11 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
   const { id } = await params;
   let d: Awaited<ReturnType<typeof getOpportunity>>;
   let others: { id: string; code: string; name: string }[];
+  let steps: Awaited<ReturnType<typeof upcomingSteps>> = [];
   try {
     d = await getOpportunity(id);
     others = d ? (await listOpportunities()).filter((x) => x.id !== id).map((x) => ({ id: x.id, code: x.code, name: x.name })) : [];
+    steps = d ? await upcomingSteps(new Date().toLocaleDateString("en-CA", { timeZone: process.env.APP_TIMEZONE ?? "Australia/Hobart" }), id) : [];
   } catch (e) {
     console.error("opportunity page failed", e);
     const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
@@ -81,6 +84,12 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
 
       <Tabs tabs={[
         { key: "overview", label: "Overview", content: <>
+          {steps.length > 0 && (
+            <section className="mb-4 rounded-xl border border-line bg-white py-2">
+              <h3 className="px-4 py-1 text-sm font-semibold">Plan: what&apos;s next</h3>
+              <PlanSteps steps={steps} today={new Date().toLocaleDateString("en-CA", { timeZone: process.env.APP_TIMEZONE ?? "Australia/Hobart" })} />
+            </section>
+          )}
           <NicheCard niche={o.niche} parent={d.parent as never} narrower={d.children as never} briefFile={o.researchBriefFile} />
           <OverviewForm id={id} initial={fields} legacy={{ decision: o.legacyDecision, validation: o.legacyValidationStatus, evidence: o.legacyEvidenceStatus, source: o.importSource, raw: o.importRaw }} />
         </> },

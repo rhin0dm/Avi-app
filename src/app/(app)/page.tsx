@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { dashboardData, type OpportunityListItem } from "@/lib/repo";
+import { dashboardData, upcomingSteps, type OpportunityListItem } from "@/lib/repo";
+import { PlanSteps } from "@/components/PlanSteps";
 import { Card, DecisionBadge, PageHeader, Stat, StageBadge, btnPrimary } from "@/components/ui";
 import { date, isoDay, money, num, pct } from "@/lib/format";
 
@@ -30,6 +31,7 @@ function List({ items, empty, render }: { items: OpportunityListItem[]; empty: s
 export default async function DecisionCentre() {
   const { opps, experiments, runway, recentDecisions } = await dashboardData();
   const t = today();
+  const steps = await upcomingSteps(t);
   const live = opps.filter((o) => ACTIVE_STAGES.includes(o.stage) || o.stage === "hold");
   const counts = { PASS: 0, INVESTIGATE: 0, FAIL: 0, UNSCORED: 0 } as Record<string, number>;
   for (const o of opps) counts[o.decision] = (counts[o.decision] ?? 0) + 1;
@@ -84,6 +86,12 @@ export default async function DecisionCentre() {
         <Stat label="Runway" value={runwayMonths !== null ? `${num(runwayMonths)} mo` : "Not set"}
           hint={runwayMonths !== null ? `Resign ${date(runway.resignationDate)} → to ${date(runwayEnd)}` : `${num(monthsToResign)} months to resignation · set in Settings`} href="/settings" />
       </div>
+
+      {steps.length > 0 && (
+        <Card title="Coming up in your plans" className="mt-6">
+          <PlanSteps steps={steps.slice(0, 8)} today={t} showIdea />
+        </Card>
+      )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card title="Needs attention now">
