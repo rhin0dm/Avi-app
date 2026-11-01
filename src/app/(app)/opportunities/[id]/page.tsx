@@ -14,12 +14,26 @@ import { EvidencePanel } from "./EvidencePanel";
 
 export default async function OpportunityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const d = await getOpportunity(id);
+  let d: Awaited<ReturnType<typeof getOpportunity>>;
+  let others: { id: string; code: string; name: string }[];
+  try {
+    d = await getOpportunity(id);
+    others = d ? (await listOpportunities()).filter((x) => x.id !== id).map((x) => ({ id: x.id, code: x.code, name: x.name })) : [];
+  } catch (e) {
+    console.error("opportunity page failed", e);
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    return (
+      <div className="rounded-xl border border-fail/30 bg-fail-soft p-4 text-sm">
+        <p className="font-semibold text-fail">This opportunity couldn&apos;t be loaded.</p>
+        <p className="mt-2 break-words font-mono text-xs">{msg.replace(/postgres(ql)?:\/\/\S+/gi, "[connection string]").slice(0, 500)}</p>
+        <p className="mt-2"><Link className="underline" href="/opportunities">Back to the register</Link></p>
+      </div>
+    );
+  }
   if (!d) notFound();
   const o = d.opportunity;
   const cur = d.currentScore;
   const decision = cur?.decision ?? "UNSCORED";
-  const others = (await listOpportunities()).filter((x) => x.id !== id).map((x) => ({ id: x.id, code: x.code, name: x.name }));
 
   const fields = {
     name: o.name, description: o.description, coreHypothesis: o.coreHypothesis, targetCustomer: o.targetCustomer, problem: o.problem,

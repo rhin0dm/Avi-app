@@ -249,18 +249,17 @@ export async function getOpportunity(id: string) {
   const [o] = await sql`select o.*, m.code as merged_into_code, m.name as merged_into_name
     from opportunities o left join opportunities m on m.id = o.merged_into_id where o.id = ${id}`;
   if (!o) return null;
-  const [scores, evidence, experiments, decisions, auditRows, jobs, mergedFrom, version, fin] = await Promise.all([
-    sql`select s.*, v.label as version_label, v.weights as version_weights from scores s
-      join scoring_versions v on v.id = s.scoring_version_id where s.opportunity_id = ${id} order by s.created_at desc`,
-    sql`select e.* from evidence e join opportunity_evidence oe on oe.evidence_id = e.id where oe.opportunity_id = ${id} order by e.code`,
-    sql`select * from experiments where opportunity_id = ${id} order by code`,
-    sql`select * from decision_history where opportunity_id = ${id} order by created_at desc`,
-    sql`select * from audit_log where entity = 'opportunity' and entity_id = ${id} order by at desc limit 100`,
-    sql`select * from jobs where opportunity_id = ${id} order by created_at desc limit 20`,
-    sql`select id, code, name from opportunities where merged_into_id = ${id}`,
-    activeScoringVersion(),
-    getFinancialModel(id),
-  ]);
+  // Sequential on purpose: one connection at a time is kinder to hosted transaction poolers.
+  const scores = await sql`select s.*, v.label as version_label, v.weights as version_weights from scores s
+      join scoring_versions v on v.id = s.scoring_version_id where s.opportunity_id = ${id} order by s.created_at desc`;
+  const evidence = await sql`select e.* from evidence e join opportunity_evidence oe on oe.evidence_id = e.id where oe.opportunity_id = ${id} order by e.code`;
+  const experiments = await sql`select * from experiments where opportunity_id = ${id} order by code`;
+  const decisions = await sql`select * from decision_history where opportunity_id = ${id} order by created_at desc`;
+  const auditRows = await sql`select * from audit_log where entity = 'opportunity' and entity_id = ${id} order by at desc limit 100`;
+  const jobs = await sql`select * from jobs where opportunity_id = ${id} order by created_at desc limit 20`;
+  const mergedFrom = await sql`select id, code, name from opportunities where merged_into_id = ${id}`;
+  const version = await activeScoringVersion();
+  const fin = await getFinancialModel(id);
   const current = scores.find((s) => s.isCurrent && s.decision !== "LEGACY") ?? null;
   return {
     opportunity: o, currentScore: current, scoreHistory: scores, evidence, experiments, decisions,
