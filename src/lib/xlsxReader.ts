@@ -25,12 +25,21 @@ const parser = new XMLParser({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type X = any;
 
+/** Numeric character references (&#8212; &#x2014;) that the XML parser leaves encoded. */
+function decodeRefs(s: string): string {
+  if (!s.includes("&#")) return s;
+  return s.replace(/&#(?:x([0-9a-f]+)|(\d+));/gi, (m, hex, dec) => {
+    const cp = hex ? parseInt(hex, 16) : Number(dec);
+    return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+  });
+}
+
 function text(node: X): string {
   if (node === undefined || node === null) return "";
-  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (typeof node === "string" || typeof node === "number") return decodeRefs(String(node));
   if (Array.isArray(node)) return node.map(text).join("");
   if (typeof node === "object") {
-    if ("#text" in node) return String(node["#text"]);
+    if ("#text" in node) return decodeRefs(String(node["#text"]));
     if ("t" in node || "r" in node) return text(node.t) + text(node.r);
   }
   return "";
