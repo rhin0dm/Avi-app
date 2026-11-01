@@ -25,3 +25,13 @@ export const STAGE_LABEL: Record<string, string> = {
   idea: "Idea", research: "Research", investigate: "Investigate", validation: "Validation", build: "Build",
   launch: "Launch", scale: "Scale", hold: "Hold", reject: "Reject", archive: "Archive",
 };
+
+/** Hostname for display; never throws on a malformed URL. */
+export function host(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}

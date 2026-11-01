@@ -44,6 +44,7 @@ export async function activeScoringVersion(db: Db = getSql()): Promise<ScoringVe
   return { ...v, thresholds: { ...DEFAULT_THRESHOLDS, ...v.thresholds } } as ScoringVersion;
 }
 export async function listScoringVersions(): Promise<ScoringVersion[]> {
+  await ready();
   return (await getSql()`select * from scoring_versions order by id desc`) as unknown as ScoringVersion[];
 }
 export async function createScoringVersion(label: string, weights: Weights, thresholds: Thresholds, notes?: string) {
@@ -219,6 +220,7 @@ export type OpportunityListItem = Row & {
 };
 
 export async function listOpportunities(opts: { includeMerged?: boolean } = {}): Promise<OpportunityListItem[]> {
+  await ready();
   const sql = getSql();
   const rows = await sql`
     select o.*, s.weighted_total, s.evidence_confidence, coalesce(s.decision, 'UNSCORED') as decision,
@@ -265,10 +267,14 @@ export async function getOpportunity(id: string) {
   const fin = await getFinancialModel(id);
   const briefs = await sql`select id, title, version, analyst, prepared_on, content, parsed, imported_at
     from research_briefs where opportunity_id = ${id} or parsed->>'childOpportunityId' = ${id} order by imported_at desc`;
+  const competitors = await sql`select * from competitors where opportunity_id = ${id} order by alt_type nulls last, name`;
+  const related = await sql`select id, code, name, stage from opportunities
+    where (parent_code = ${o.code} or code = ${o.parentCode ?? ""}) and id <> ${id} order by code`;
   const current = scores.find((s) => s.isCurrent && s.decision !== "LEGACY") ?? null;
   return {
     opportunity: o, currentScore: current, scoreHistory: scores, evidence, experiments, decisions,
-    audit: auditRows, jobs, mergedFrom, activeVersion: version, financial: fin, briefs,
+    audit: auditRows, jobs, mergedFrom, activeVersion: version, financial: fin, briefs, competitors,
+    parent: related.find((r) => r.code === o.parentCode) ?? null, children: related.filter((r) => r.code !== o.parentCode),
     scoreDraft: {
       criteria: (current?.criteria as CriterionScore[]) ?? emptyCriteria(),
       gates: (current?.gates as GateAssessment[]) ?? emptyGates(),
@@ -278,6 +284,7 @@ export async function getOpportunity(id: string) {
 
 // ---------------------------------------------------------------- settings / dashboard
 export async function getRunway(): Promise<Runway> {
+  await ready();
   const [r] = await getSql()`select value from settings where key = 'runway'`;
   return r?.value ?? { savingsAud: null, monthlyPersonalSpendAud: null, resignationDate: "2027-02-28", currentSalaryAud: 160000 };
 }
@@ -291,6 +298,7 @@ export async function saveRunway(v: Runway) {
 }
 
 export async function dashboardData() {
+  await ready();
   const sql = getSql();
   const [opps, experiments, runway, recentDecisions] = await Promise.all([
     listOpportunities(),
@@ -303,6 +311,7 @@ export async function dashboardData() {
 
 // ---------------------------------------------------------------- comparison
 export async function compareData(ids: string[]) {
+  await ready();
   const clean = ids.filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 6);
   if (!clean.length) return [];
   const all = await listOpportunities({ includeMerged: true });
@@ -330,6 +339,7 @@ export async function compareData(ids: string[]) {
 
 // ---------------------------------------------------------------- evidence library
 export async function listEvidence() {
+  await ready();
   return getSql()`select e.*, coalesce(json_agg(json_build_object('id', o.id, 'code', o.code)) filter (where o.id is not null), '[]') as links
     from evidence e left join opportunity_evidence oe on oe.evidence_id = e.id left join opportunities o on o.id = oe.opportunity_id
     group by e.id order by e.code nulls last, e.created_at`;
@@ -343,6 +353,11 @@ export async function linkEvidence(evidenceId: string, opportunityId: string, li
     await audit(tx, "opportunity", opportunityId, link ? "evidence_linked" : "evidence_unlinked", { evidence: e.code });
   });
 }
+export async function listNicheScans() {
+  await ready();
+  return getSql()`select * from niche_scans order by scan_id`;
+}
+
 export async function classifyEvidence(evidenceId: string, classification: string) {
   return getSql().begin(async (tx) => {
     const [e] = await tx`select classification from evidence where id = ${evidenceId} for update`;

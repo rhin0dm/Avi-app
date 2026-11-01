@@ -1,4 +1,4 @@
-import { getSql } from "@/lib/db";
+import { getSql, ready } from "@/lib/db";
 import { PageHeader, Card, btnSecondary } from "@/components/ui";
 import { ImportForm } from "./ImportForm";
 import { BriefForm } from "./BriefForm";
@@ -6,6 +6,7 @@ import { BriefForm } from "./BriefForm";
 export const metadata = { title: "Import / export" };
 
 export default async function ImportPage() {
+  await ready();
   const runs = await getSql()`select * from import_runs order by at desc limit 10`;
   return (
     <>

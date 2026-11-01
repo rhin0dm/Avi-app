@@ -58,7 +58,7 @@ describe("research brief import (same-idea wedge)", () => {
   it("automatic migrations are idempotent", async () => {
     await ready();
     const rows = await sql`select name from schema_migrations order by name`;
-    expect(rows.map((r) => r.name)).toEqual(["001_init.sql", "002_research_briefs.sql"]);
+    expect(rows.map((r) => r.name)).toEqual(["001_init.sql", "002_research_briefs.sql", "003_workbook_v14.sql"]);
   });
 });
 

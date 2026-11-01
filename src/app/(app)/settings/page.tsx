@@ -4,11 +4,12 @@ import { Card, PageHeader } from "@/components/ui";
 import { CRITERIA } from "@/lib/scoring";
 import { date } from "@/lib/format";
 import { WeightsForm, RunwayForm, RescoreButton, SignOut } from "./Forms";
-import { getSql } from "@/lib/db";
+import { getSql, ready } from "@/lib/db";
 
 export const metadata = { title: "Settings" };
 
 export default async function Settings() {
+  await ready();
   const [active, versions, runway] = await Promise.all([activeScoringVersion(), listScoringVersions(), getRunway()]);
   const ai = providerStatus();
   const [{ n: stale }] = await getSql()`select count(*)::int as n from scores where is_current and decision <> 'LEGACY' and scoring_version_id <> ${active.id}`;

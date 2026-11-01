@@ -6,7 +6,7 @@ import { runScenarios, financialInputsSchema, scenariosSchema } from "./finance"
 import { CRITERIA, GATES } from "./scoring";
 
 const TABLES = ["opportunities", "scoring_versions", "scores", "financial_models", "evidence", "opportunity_evidence",
-  "experiments", "decision_history", "jobs", "audit_log", "settings", "import_runs", "research_briefs"] as const;
+  "experiments", "decision_history", "jobs", "audit_log", "settings", "import_runs", "research_briefs", "competitors", "niche_scans"] as const;
 
 const plain = (v: unknown): string | number | null => {
   if (v === null || v === undefined) return null;

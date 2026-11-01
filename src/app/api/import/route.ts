@@ -23,6 +23,6 @@ export const POST = handle(async (req: Request) => {
     throw new UserError(e instanceof Error ? e.message : "Could not read workbook");
   }
   if (mode === "preview") return NextResponse.json({ mode, plan });
-  const summary = await commitImport(sql, plan, file.name.slice(0, 200));
+  const summary = await commitImport(sql, plan, file.name.slice(0, 200), { overwriteConflicts: form.get("overwrite") === "1" });
   return NextResponse.json({ mode, summary });
 });

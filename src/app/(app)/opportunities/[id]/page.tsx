@@ -12,6 +12,7 @@ import { Actions } from "./Actions";
 import { Interpretation } from "./Interpretation";
 import { EvidencePanel } from "./EvidencePanel";
 import { ResearchPanel } from "./ResearchPanel";
+import { NicheCard } from "./NicheCard";
 
 export default async function OpportunityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -79,10 +80,13 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
       <Interpretation id={id} status={o.interpretationStatus} data={o.interpretation} aiConfigured={providerStatus().configured} />
 
       <Tabs tabs={[
-        { key: "overview", label: "Overview", content: <OverviewForm id={id} initial={fields} legacy={{ decision: o.legacyDecision, validation: o.legacyValidationStatus, evidence: o.legacyEvidenceStatus, source: o.importSource, raw: o.importRaw }} /> },
+        { key: "overview", label: "Overview", content: <>
+          <NicheCard niche={o.niche} parent={d.parent as never} narrower={d.children as never} briefFile={o.researchBriefFile} />
+          <OverviewForm id={id} initial={fields} legacy={{ decision: o.legacyDecision, validation: o.legacyValidationStatus, evidence: o.legacyEvidenceStatus, source: o.importSource, raw: o.importRaw }} />
+        </> },
         { key: "score", label: "Score", content: <ScoreEditor id={id} initial={d.scoreDraft} weights={d.activeVersion.weights} thresholds={d.activeVersion.thresholds} versionLabel={d.activeVersion.label} /> },
         { key: "financials", label: "Financials", content: <FinancialEditor id={id} initial={d.financial} /> },
-        { key: "research", label: `Research (${d.briefs.length})`, content: <ResearchPanel briefs={d.briefs as never} /> },
+        { key: "research", label: `Research (${d.briefs.length + d.competitors.length})`, content: <ResearchPanel briefs={d.briefs as never} competitors={d.competitors as never} /> },
         { key: "evidence", label: `Evidence (${d.evidence.length})`, content: <EvidencePanel evidence={d.evidence} experiments={d.experiments} /> },
         {
           key: "history", label: "History", content: (
