@@ -45,7 +45,7 @@ export function ImportForm() {
             <details>
               <summary className="cursor-pointer font-semibold">New opportunities and missing fields</summary>
               <ul className="mt-2 divide-y divide-line">
-                {newOpps.map((o) => <li key={o.key} className="py-1.5">{o.code ?? "(new code)"} · {o.name} <span className="text-muted">· original #{o.rank} · {o.legacyScore}/100</span>
+                {newOpps.map((o) => <li key={o.key} className="py-1.5">{o.code ?? "(new code)"} · {o.name} <span className="text-muted">{o.rank !== null ? `· original #${o.rank} · ${o.legacyScore}/100` : "· from Idea Intake"}</span>
                   {o.missingFields.length > 0 && <div className="text-xs text-muted">Missing: {o.missingFields.join(", ")}</div>}</li>)}
               </ul>
             </details>

@@ -4,7 +4,7 @@
 import { readXlsx, type SheetData } from "./xlsxReader";
 import { createHash } from "node:crypto";
 import type { Sql } from "postgres";
-import { normalizeName } from "./similarity";
+import { findSimilar, normalizeName } from "./similarity";
 import { audit, nextCode } from "./repo";
 import type { Stage } from "./validation";
 
@@ -82,9 +82,10 @@ export type ImportPlan = {
   sheetsFound: string[];
   sheetsIgnored: string[];
   opportunities: { key: string; row: number; code: string | null; name: string; rank: number | null; legacyScore: number | null;
-    status: "new" | "duplicate"; duplicateOf?: string; missingFields: string[]; data: Record<string, unknown>; evidenceIds: string[] }[];
+    status: "new" | "duplicate"; duplicateOf?: string; missingFields: string[]; data: Record<string, unknown>; evidenceIds: string[];
+    sourceId?: string }[];
   evidence: { key: string; code: string; claim: string; classification: string; original: string | null; status: "new" | "duplicate"; data: Record<string, unknown> }[];
-  experiments: { key: string; code: string; rank: number | null; status: "new" | "duplicate"; data: Record<string, unknown> }[];
+  experiments: { key: string; code: string; rank: number | null; ideaId?: string | null; status: "new" | "duplicate"; data: Record<string, unknown> }[];
   decisions: { key: string; status: "new" | "duplicate"; ideaId: string | null; data: Record<string, unknown> }[];
   skippedExamples: { sheet: string; row: number }[];
   warnings: string[];
@@ -122,6 +123,10 @@ export async function planImport(sql: Sql, bytes: Uint8Array): Promise<ImportPla
   const exKeys = new Set((await sql`select import_key from experiments where import_key is not null`).map((e) => e.importKey));
   const dhKeys = new Set((await sql`select import_key from decision_history where import_key is not null`).map((e) => e.importKey));
   const takenCodes = new Set(existing.map((e) => e.code));
+  // Rows from the intake / evaluation / validation / brief sheets, combined after all sheets are read
+  const intakeRows: { title: string; r: Rec & { __row: number } }[] = [];
+  const evalRows = new Map<string, Rec>();
+  const briefs = new Map<string, { title: string; pairs: [string, string][] }>();
 
   for (const ws of sheets) {
     const title = ws.name;
@@ -250,17 +255,132 @@ export async function planImport(sql: Sql, bytes: Uint8Array): Promise<ImportPla
       }
       continue;
     }
-    // ---- Intake / evaluation / validation templates: only example rows today
-    const other = readSheet(ws, (h) => h.includes("id") || h.includes("test id"));
-    if (other && ["Idea Intake", "Idea Evaluations", "Validation Tests"].includes(title)) {
-      const real = other.rows.filter((r) => !isExample(r) && Object.entries(r).some(([k, v]) => k !== "__row" && k !== "Weighted /100" && k !== "Decision" && v !== null));
-      other.rows.filter(isExample).forEach((r) => plan.skippedExamples.push({ sheet: title, row: r.__row }));
-      if (real.length) plan.warnings.push(`${title}: ${real.length} non-example row(s) found but not imported — this sheet type isn't mapped yet. Enter them through Submit idea.`);
-      plan.sheetsIgnored.push(`${title} (template sheet)`);
+    // ---- Idea Intake: new ideas captured in the workbook
+    const intake = readSheet(ws, (h) => h.includes("idea / niche") && h.includes("target buyer"));
+    if (intake) {
+      plan.sheetsFound.push(title);
+      for (const r of intake.rows) {
+        if (isExample(r)) { plan.skippedExamples.push({ sheet: title, row: r.__row }); continue; }
+        if (str(pick(r, "Idea / niche"))) intakeRows.push({ title, r });
+      }
+      continue;
+    }
+    // ---- Idea Evaluations: merged into the matching intake idea (scores are not auto-imported)
+    const evals = readSheet(ws, (h) => h.includes("weighted /100") || (h.includes("next test") && h.includes("evidence quality")));
+    if (evals) {
+      plan.sheetsFound.push(title);
+      for (const r of evals.rows) {
+        if (isExample(r)) { plan.skippedExamples.push({ sheet: title, row: r.__row }); continue; }
+        const id = str(pick(r, "ID"));
+        if (id) evalRows.set(id.toUpperCase(), r);
+      }
+      continue;
+    }
+    // ---- Validation Tests: become experiments linked by idea ID
+    const vt = readSheet(ws, (h) => h.includes("test id") && h.includes("idea id"));
+    if (vt) {
+      plan.sheetsFound.push(title);
+      for (const r of vt.rows) {
+        const code = str(pick(r, "Test ID"));
+        if (!code) continue;
+        if (isExample(r)) { plan.skippedExamples.push({ sheet: title, row: r.__row }); continue; }
+        const key = `experiment:${code}`;
+        const result = str(pick(r, "Actual result"));
+        plan.experiments.push({
+          key, code, rank: null, ideaId: str(pick(r, "Idea ID"))?.toUpperCase() ?? null, status: exKeys.has(key) ? "duplicate" : "new",
+          data: {
+            code, hypothesis: str(pick(r, "Hypothesis")), design: str(pick(r, "14-day test", "Test design")),
+            successThreshold: str(pick(r, "Success threshold")), budgetAud: num(pick(r, "Budget AUD")),
+            status: !result || /not started/i.test(result) ? "planned" : result.toLowerCase().slice(0, 40),
+            result: result && !/not started/i.test(result) ? result : null, decision: str(pick(r, "Decision")),
+            evidenceUrl: (() => { const u = str(pick(r, "Evidence link")); return u && /^https?:\/\//i.test(u) ? u : null; })(),
+            lessons: str(pick(r, "Next action")), importKey: key,
+          },
+        });
+      }
+      continue;
+    }
+    // ---- Brief sheets titled like "AVI-026 | ..." (label / value pairs)
+    const heading = String(ws.rows[0]?.[0] ?? "");
+    const briefId = heading.match(/^\s*(AVI-\d+)\s*\|/i)?.[1]?.toUpperCase();
+    if (briefId) {
+      plan.sheetsFound.push(title);
+      const pairs: [string, string][] = [];
+      for (const row of ws.rows.slice(1)) {
+        const k = row?.[0], v = row?.[1];
+        if (k !== null && k !== undefined && v !== null && v !== undefined && String(v).trim() !== "") pairs.push([String(k).trim(), String(v).trim()]);
+      }
+      briefs.set(briefId, { title, pairs });
       continue;
     }
     plan.sheetsIgnored.push(title);
   }
+
+  // Ideas from the Idea Intake sheet, enriched with their evaluation row and brief
+  const pool = existing.map((e) => ({ id: e.code as string, code: e.code as string, name: "", description: null as string | null }));
+  const existingNames = await sql`select code, name from opportunities`;
+  for (const p of pool) p.name = existingNames.find((x) => x.code === p.code)?.name ?? "";
+  const seenIntake = new Set(plan.opportunities.map((o) => o.key));
+  let scoredEvalRows = 0;
+  for (const { title, r } of intakeRows) {
+    const name = str(pick(r, "Idea / niche"))!;
+    const sourceId = str(pick(r, "ID"))?.toUpperCase() ?? null;
+    const nn = normalizeName(name);
+    const key = `register:${nn}`;
+    if (seenIntake.has(key)) { plan.warnings.push(`${title} row ${r.__row}: "${name}" is already in the register sheet; skipped.`); continue; }
+    seenIntake.add(key);
+    const ev = sourceId ? evalRows.get(sourceId) : undefined;
+    const brief = sourceId ? briefs.get(sourceId) : undefined;
+    const b = (label: string) => brief?.pairs.find(([k]) => k.toLowerCase() === label.toLowerCase())?.[1] ?? null;
+    if (ev && ["Profit 0-10", "Demand 0-10", "Acquisition 0-10", "AI & scale 0-10", "Low burden 0-10", "Risk 0-10"].every((h) => num(pick(ev, h)) !== null)) scoredEvalRows++;
+    const price = pick(r, "Proposed price AUD");
+    const research = str(pick(r, "Research status"));
+    const notes = [
+      str(pick(r, "Source / notes")) && `Sources: ${str(pick(r, "Source / notes"))}`,
+      ev && str(pick(ev, "Sources / assumptions")) && `Evaluation sources: ${str(pick(ev, "Sources / assumptions"))}`,
+      ev && str(pick(ev, "Evidence quality")) && `Evaluation evidence quality: ${str(pick(ev, "Evidence quality"))}`,
+      brief && `From "${brief.title}" sheet:\n` + brief.pairs.map(([k, v]) => `• ${k}: ${v}`).join("\n"),
+    ].filter(Boolean).join("\n\n") || null;
+    const data: Record<string, unknown> = {
+      name, normalizedName: nn,
+      description: b("Working model"),
+      targetCustomer: str(pick(r, "Target buyer")),
+      problem: str(pick(r, "Problem / trigger")),
+      revenueMechanisms: str(pick(r, "Revenue model")),
+      proposedPricing: typeof price === "number" ? `AUD ${price}` : str(price),
+      primaryRisks: b("Critical risks"),
+      legacyEvidenceStatus: str(pick(r, "Evidence level")),
+      legacyDecision: research,
+      owner: str(pick(r, "Owner")),
+      nextAction: (ev && str(pick(ev, "Next test"))) || str(pick(r, "Next action")) || b("Next action"),
+      nextReviewDate: ev ? isoDate(pick(ev, "Review date")) : null,
+      testBudgetHighAud: num(b("Test budget AUD")),
+      notes,
+      stage: STAGE_FROM_LEGACY[(research ?? "").toLowerCase()] ?? "idea",
+      importSource: `${title} (row ${r.__row})`,
+      importKey: key,
+      importRaw: {
+        intake: Object.fromEntries(Object.entries(r).filter(([k]) => k !== "__row")),
+        ...(ev ? { evaluation: ev } : {}),
+        ...(brief ? { brief: Object.fromEntries(brief.pairs) } : {}),
+      },
+    };
+    // Duplicate: same import key, same name, or an app-created idea holding this code with a similar name
+    let dupCode: string | undefined = byKey.has(key) ? existing.find((e) => e.importKey === key)?.code : byName.get(nn);
+    if (!dupCode && sourceId && takenCodes.has(sourceId)) {
+      const holder = pool.filter((p) => p.code === sourceId);
+      if (findSimilar(name, null, holder, 0.5).length) dupCode = sourceId;
+    }
+    const code = dupCode ?? (sourceId && /^AVI-\d+$/.test(sourceId) && !takenCodes.has(sourceId) ? sourceId : null);
+    if (code) takenCodes.add(code);
+    plan.opportunities.push({
+      key, row: r.__row, code, name, rank: null, legacyScore: null, sourceId: sourceId ?? undefined,
+      status: dupCode ? "duplicate" : "new", duplicateOf: dupCode,
+      missingFields: KEY_FIELDS.filter(([k]) => !data[k]).map(([, label]) => label), data, evidenceIds: [],
+    });
+  }
+  if (scoredEvalRows) plan.warnings.push(`${scoredEvalRows} idea(s) have scores on the Idea Evaluations sheet. Scores aren't copied automatically — re-enter them on each idea's Score tab with an evidence tag for every criterion.`);
+  for (const id of evalRows.keys()) if (!intakeRows.some(({ r }) => str(pick(r, "ID"))?.toUpperCase() === id)) plan.warnings.push(`Idea Evaluations has a row for ${id} but no matching Idea Intake row; it was not imported.`);
 
   // Evidence references that point nowhere
   const evCodes = new Set(plan.evidence.map((e) => e.code));
@@ -284,12 +404,14 @@ export async function commitImport(sql: Sql, plan: ImportPlan, filename: string)
     const created: string[] = [];
     const idByRank = new Map<number, string>();
     const idByCode = new Map<string, string>();
+    const idBySource = new Map<string, string>();
 
     for (const o of plan.opportunities) {
       if (o.status === "duplicate") {
         const [ex] = await tx`select id, legacy_rank, code from opportunities where code = ${o.duplicateOf!}`;
         if (ex?.legacyRank) idByRank.set(ex.legacyRank, ex.id);
         if (ex) idByCode.set(ex.code, ex.id);
+        if (ex && o.sourceId) idBySource.set(o.sourceId, ex.id);
         continue;
       }
       let code = o.code;
@@ -299,6 +421,7 @@ export async function commitImport(sql: Sql, plan: ImportPlan, filename: string)
       created.push(row.code);
       if (o.rank) idByRank.set(o.rank, row.id);
       idByCode.set(row.code, row.id);
+      if (o.sourceId) idBySource.set(o.sourceId, row.id);
       if (o.legacyScore !== null && legacy) {
         await tx`insert into scores (opportunity_id, scoring_version_id, weighted_total, decision, decision_reasons, is_current)
           values (${row.id}, ${legacy.id}, ${o.legacyScore}, 'LEGACY',
@@ -328,14 +451,20 @@ export async function commitImport(sql: Sql, plan: ImportPlan, filename: string)
     let experimentsCreated = 0;
     for (const x of plan.experiments) {
       if (x.status === "duplicate") continue;
-      const oppId = x.rank ? idByRank.get(x.rank) ?? null : null;
+      const oppId = x.rank ? idByRank.get(x.rank) ?? null
+        : x.ideaId ? idBySource.get(x.ideaId) ?? idByCode.get(x.ideaId) ?? null : null;
       await tx`insert into experiments ${tx({ ...x.data, opportunityId: oppId })} on conflict (import_key) do nothing`;
       experimentsCreated++;
     }
     let decisionsCreated = 0;
     for (const d of plan.decisions) {
-      if (d.status === "duplicate") continue;
-      const oppId = d.ideaId && d.ideaId !== "ALL" ? idByCode.get(d.ideaId) ?? null : null;
+      const ideaKey = d.ideaId?.toUpperCase();
+      const oppId = ideaKey && ideaKey !== "ALL" ? idBySource.get(ideaKey) ?? idByCode.get(ideaKey) ?? null : null;
+      if (d.status === "duplicate") {
+        // An earlier import may have stored this row before its idea existed; attach it now.
+        if (oppId) await tx`update decision_history set opportunity_id = ${oppId} where import_key = ${d.key} and opportunity_id is null`;
+        continue;
+      }
       await tx`insert into decision_history ${tx({ ...d.data, opportunityId: oppId })} on conflict (import_key) do nothing`;
       decisionsCreated++;
     }

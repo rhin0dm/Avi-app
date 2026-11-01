@@ -35,3 +35,30 @@ export async function makeRegisterWorkbook(): Promise<Uint8Array> {
   dh.addRow(["2026-11-01", "ALL", null, null, "Initial ranking", "Framework upgraded", "Added rubric", "v1.1", "AVI"]);
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
+
+/** Adds a real Idea Intake idea (AVI-026) with its evaluation, validation test, decision row and brief sheet. */
+export async function makeRegisterWorkbookV12(): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load((await makeRegisterWorkbook()) as unknown as ArrayBuffer);
+  wb.removeWorksheet(wb.getWorksheet("Idea Intake")!.id);
+  wb.removeWorksheet(wb.getWorksheet("Decision History")!.id);
+  const intake = wb.addWorksheet("Idea Intake");
+  intake.addRow(["ID", "Date", "Idea / niche", "Target buyer", "Problem / trigger", "Revenue model", "Proposed price AUD", "Evidence level", "Research status", "Owner", "Next action", "Source / notes"]);
+  intake.addRow(["AVI-026", "2026-11-01", "Productised AI implementation for service SMEs", "Small service firms", "Recurring admin work", "Setup fee + monthly", null, "Market context only", "Investigate", "AVI", "Validate 2 paid pilots", "https://www.ai.gov.au/x"]);
+  const ev = wb.addWorksheet("Idea Evaluations");
+  ev.addRow(["ID", "Idea / niche", "Profit 0-10", "Demand 0-10", "Acquisition 0-10", "AI & scale 0-10", "Low burden 0-10", "Risk 0-10", "Weighted /100", "Evidence quality", "Critical blocker?", "Decision", "Next test", "Review date", "Sources / assumptions"]);
+  ev.addRow(["AVI-026", "Productised AI", null, null, null, null, null, null, null, "Market context", "Not assessed", "INVESTIGATE", "8 interviews, 2 pilots", "2026-11-15", "https://techcouncil.com.au/x"]);
+  const vt = wb.addWorksheet("Validation Tests");
+  vt.addRow(["Test ID", "Idea ID", "Hypothesis", "14-day test", "Budget AUD", "Success threshold", "Actual result", "Decision", "Evidence link", "Next action"]);
+  vt.addRow(["TEST-001", "AVI-026", "Buyers will pay", "Interview 8 buyers", 500, "2 paid pilots", "Not started", "Pending", "https://www.ai.gov.au/x", "Review training first"]);
+  const dh = wb.addWorksheet("Decision History");
+  dh.addRow(["Date", "Idea ID", "Old score", "New score", "Old decision", "New decision", "Evidence / reason", "File version", "Owner"]);
+  dh.addRow(["2026-11-01", "ALL", null, null, "Initial ranking", "Framework upgraded", "Added rubric", "v1.1", "AVI"]);
+  dh.addRow(["2026-11-01", "AVI-026", null, null, "Not assessed", "INVESTIGATE", "New idea added", "v1.2", "AVI"]);
+  const brief = wb.addWorksheet("AI Implementation Brief");
+  brief.addRow(["AVI-026 | AI IMPLEMENTATION OPPORTUNITY", null]);
+  brief.addRow(["Working model", "Niche automation setup + managed maintenance"]);
+  brief.addRow(["Critical risks", "Support burden, crowded market"]);
+  brief.addRow(["Test budget AUD", 500]);
+  return new Uint8Array(await wb.xlsx.writeBuffer());
+}

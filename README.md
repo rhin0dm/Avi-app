@@ -44,6 +44,7 @@ Evidence confidence = weight-averaged evidence strength (verified 1.0, credible 
 ## Importing the Master Opportunity Register
 
 - Reads *Opportunity Register*, *Evidence & Sources*, *Experiment Log* and *Decision History* by their column headers.
+- New ideas on *Idea Intake* are imported too, combined with their *Idea Evaluations* row, any *Validation Tests* (as experiments) and any brief sheet titled `AVI-0xx | …`. Evaluation scores are not copied — re-enter them on the Score tab with evidence tags.
 - Keeps every original column (in `import_raw`), the original rank and score (as a separate **legacy** scoring version), and original statuses.
 - Imported opportunities start **Not scored** under the AVI model — the original ranks are not treated as validated.
 - Evidence keeps its original classification text; all of it is stored as *Unverified* until you check it.
